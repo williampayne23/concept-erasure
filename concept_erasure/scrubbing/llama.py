@@ -91,7 +91,8 @@ def scrub_llama(
     d = assert_type(int, base.config.hidden_size)
 
 	# I think z_collumn is the collumn from the dataset to do concept erasure on?
-    # 
+    # So if it doesn't exist there's no scrubber if it does there is and k
+    # is a parameter they use in the scrubber
     if z_column is None:
         k = -1
         scrubber = None
@@ -101,9 +102,14 @@ def scrub_llama(
 
     losses = []
 
+    # Embeddings of inputs
     xs = []
+    # GPT4 says this is one-hot encoded values of the target concept and this is
+    # a useful thing for categorisation
     zs = []
+    # Number of batches
     N = len(train) // batch_size
+    # Torchifying the training data seems fine
     train = train.with_format("torch", device=model.device)
 
     # Embed all the inputs
@@ -120,11 +126,16 @@ def scrub_llama(
             zs.append(F.one_hot(batch[z_column], num_classes=k))
 
     # Enumerate the layers
+    # In the talk they say they have to do a tranposed forward pass where they
+    # have layers in the outer loop and data in the inner loop because
+    # scrubbing layer n depends on layer n-1 so you have to do layers sequentially
     for j, layer in enumerate(tqdm(base.layers, unit="layer")):
         assert isinstance(layer, LlamaDecoderLayer)
 
         attn_eraser = None
+        # Scrubber is not none we make attn_eraser but how?
         if scrubber is not None:
+            # Make a fitter
             attn_fitter = LeaceFitter(
                 d, k, affine=affine, device=model.device, method=method
             )
@@ -134,6 +145,7 @@ def scrub_llama(
                 assert scrubber is not None
 
                 # Discard post-LN output and recompute during application to save RAM
+                # ^I don't fully get what this means
                 x = layer.input_layernorm(x.to(model.device))
                 attn_fitter.update(x, z)
 
@@ -144,6 +156,7 @@ def scrub_llama(
         # Run attention & MLP with the erasers we just fit
         for i, x in tqdm(enumerate(xs), desc="Applying (attn)", total=N):
             # Bring back to the accelerator
+            # ^ Not clear to me why they got rid of it
             x = x.to(model.device)
             h = layer.input_layernorm(x)  # Recomputing from above
 

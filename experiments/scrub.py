@@ -64,7 +64,8 @@ if __name__ == "__main__":
     )
     tokenizer = assert_type(
         PreTrainedTokenizerBase,
-        AutoTokenizer.from_pretrained(args.model, use_fast="llama" not in args.model),
+        AutoTokenizer.from_pretrained(
+            args.model, use_fast="llama" not in args.model),
     )
     patch_attention_(model)
 
